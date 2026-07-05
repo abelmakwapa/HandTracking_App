@@ -1,8 +1,9 @@
 # Real-Time Hand Tracking App
 
-Modular hand tracking with **finger counting**, **static gesture recognition**, and
-**two-hand interaction detection**, built on OpenCV + MediaPipe. Designed as a
-foundation for gesture-controlled interfaces, not a one-off demo.
+Modular hand tracking with **finger counting**, **static gesture recognition**,
+**dynamic (motion) gesture recognition**, and **two-hand interaction detection**,
+built on OpenCV + MediaPipe. Designed as a foundation for gesture-controlled
+interfaces, not a one-off demo.
 
 ## File layout
 
@@ -10,8 +11,9 @@ foundation for gesture-controlled interfaces, not a one-off demo.
 |------|----------------|
 | `geometry.py` | Pure vector/landmark math (distances, joint angles, palm center). No CV deps. |
 | `fps_counter.py` | Rolling-average FPS meter. |
-| `hand_tracker.py` | `HandTracker` — MediaPipe wrapper; returns clean `HandResult`s with handedness. |
-| `gesture_classifier.py` | `GestureClassifier` — one scored method per gesture. |
+| `hand_tracker.py` | `HandTracker` — MediaPipe Tasks API wrapper; returns clean `HandResult`s with handedness. |
+| `gesture_classifier.py` | `GestureClassifier` — one scored method per **static** (single-frame) gesture. |
+| `dynamic_gestures.py` | `DynamicGestureRecognizer` — one scored method per **motion** gesture (swipe, wave, circle), driven by per-hand trajectory history. |
 | `interaction_analyzer.py` | `InteractionAnalyzer` — pluggable two-hand rules (touch, pinch/zoom, active hand). |
 | `main.py` | CLI + orchestration + on-screen overlay. |
 
@@ -29,12 +31,25 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
+**Download the hand-landmark model** (required — current MediaPipe releases no
+longer bundle the legacy `mp.solutions` API or its model internally; the app uses
+the newer Tasks API, which loads the model from disk):
+
+```bash
+curl -sL -o hand_landmarker.task \
+  https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task
+```
+
+`main.py` looks for `hand_landmarker.task` in the working directory by default;
+override with `--model-path` if you put it elsewhere. If it's missing, the app
+exits with this same download command rather than crashing.
+
 **OS-specific notes**
 
-- **macOS**: the first webcam run triggers a camera-permission prompt. If you launch
-  from a terminal, grant the *terminal app* camera access under
-  *System Settings → Privacy & Security → Camera*, then restart the terminal.
-  Apple-silicon Macs work on native `python.org`/Homebrew Python 3.11.
+- **macOS**: the first webcam run triggers a camera-permission prompt. Grant the
+  *terminal app* camera access under *System Settings → Privacy & Security →
+  Camera*, then **restart the terminal** (not just the script) for it to take
+  effect. Apple-silicon Macs work on native `python.org`/Homebrew Python 3.11.
 - **Windows**: `pip install opencv-python mediapipe` works out of the box. If the
   webcam is slow to open, it's usually the DirectShow backend warming up.
 - **Linux**: you may need `sudo apt install libgl1` for OpenCV's GUI and ensure your
@@ -59,7 +74,7 @@ python main.py --source 1 --width 1280 --height 720
 python main.py --source /path/to/video.mov
 ```
 
-**Debug overlay (raw coords + all gesture scores + interaction deltas):**
+**Debug overlay (raw coords + all gesture scores + motion/interaction deltas):**
 ```bash
 python main.py --debug
 ```
@@ -101,6 +116,25 @@ right scores ~0.9 instead of flipping on/off.
 Finger counting uses a **0.5 decision point** on the per-finger extension score
 (`count_fingers`). Each gesture combines sub-scores with `min(...)` = "all
 conditions must hold"; the weakest condition sets the confidence.
+
+**Dynamic (motion) gesture thresholds** — in `dynamic_gestures.py`:
+
+| Constant | Meaning |
+|----------|---------|
+| `HISTORY_SECONDS` (1.5s) | how much trajectory each hand retains; raises the ceiling for how slow a wave/circle can be and still register |
+| `SWIPE_WINDOW` (0.5s) | a swipe's start-to-end displacement must happen within this time |
+| `SWIPE_MIN_DISTANCE` (0.25 frame-widths) | net displacement needed to call it a swipe (not just drift) |
+| `SWIPE_AXIS_RATIO` (1.8x) | how much the dominant axis must beat the other axis, to reject diagonal motion |
+| `WAVE_MIN_REVERSALS` (3) | x-direction changes required within the window to call it a wave |
+| `WAVE_MIN_AMPLITUDE` (0.04) | minimum x movement per half-cycle before it counts as a reversal (filters hand jitter) |
+| `WAVE_MAX_Y_DRIFT` (0.15) | if the hand drifts vertically more than this during the window, it's not a wave |
+| `CIRCLE_MIN_ANGLE` (300°) | cumulative swept angle required to call it a full circle |
+| `CIRCLE_MIN_RADIUS` (0.05 frame-widths) | minimum average radius from the trajectory's centroid, to reject in-place jitter |
+| `GESTURE_COOLDOWN` (0.8s) | suppresses re-firing the same motion gesture on the same hand immediately after it fires |
+
+Each motion gesture returns a confidence too (e.g. swipe confidence scales with how
+far past `SWIPE_MIN_DISTANCE` the displacement got), visible in `--debug` next to the
+gesture name.
 
 **Interaction thresholds** — in `interaction_analyzer.py`:
 
@@ -145,6 +179,13 @@ Since webcam input can't be unit-tested easily, verify each feature by hand. Run
 - [ ] V / peace sign, fingers apart → `Peace`
 - [ ] Thumb+index circle, other fingers up → `OK Sign`
 
+**Dynamic (motion) gestures** (single hand; watch the orange line above the interaction row)
+- [ ] Swipe your hand quickly left-to-right across the frame → `[swipe] right` (or `Left: Swipe Right` in the overlay).
+- [ ] Swipe right-to-left → `Swipe Left`; swipe down→up → `Swipe Up`; up→down → `Swipe Down`.
+- [ ] Wave your hand side-to-side 3+ times (like waving hello) → `Wave`.
+- [ ] Draw a full circle in the air with your hand → `Circle (CW)` or `Circle (CCW)` depending on direction.
+- [ ] After any motion gesture fires, it shouldn't immediately re-fire on the next frame (0.8s cooldown).
+
 **Two-hand interactions** (need both hands in frame)
 - [ ] Bring palms together / clap → `[touch]` appears at the bottom.
 - [ ] Hold both hands up, move them apart → `[pinch_zoom] zoom_in`; together → `zoom_out`.
@@ -164,13 +205,20 @@ Since webcam input can't be unit-tested easily, verify each feature by hand. Run
 | **Fist vs. thumbs up/down** | All three share four curled fingers; only the thumb differs. A thumb that's tucked but slightly angled can read as up/down. | For a clean fist, tuck the thumb across the fingers; for thumbs up/down, extend the thumb fully and clear of the palm. |
 | **Thumbs up vs. thumbs down** | Distinguished purely by thumb-tip vertical position vs. wrist. Near-horizontal thumbs are ambiguous. | Point the thumb clearly up or down, not sideways. |
 | **Fist vs. OK (edge case)** | A loose fist where thumb rests near the index tip can start scoring OK. | Watch the `ok` score in `--debug`; raise `OK_TOUCH_DIST` down if false OKs appear. |
+| **Swipe vs. wave** | A fast single back-and-forth can look like the start of a swipe in one direction, then reverse. Since a swipe fires (and clears history) on the first qualifying displacement, a wave that starts fast may fire as a swipe instead. | Start a wave with smaller, more controlled oscillations; reserve full-arm motion for swipes. |
+| **Circle vs. wave** | A wide, curved wave can accumulate enough swept angle to look "circle-ish" before completing a straight reversal. | Keep circles round and at a consistent radius from a fixed center; keep waves flat (mostly x-motion, `WAVE_MAX_Y_DRIFT` guards this). |
+| **Active-hand vs. swipe on the *other* hand** | If one hand swipes, `rule_active_hand` (in `interaction_analyzer.py`) will also likely name it "active" that frame — both are correct simultaneously, not a bug, but can look redundant on screen. | Expected overlap; the two systems answer different questions (which hand moved vs. what shape did the motion trace). |
 
 ---
 
 ## Extending it
 
-- **New gesture:** add a `score_<name>()` method to `GestureClassifier`, register it in
-  `scores()`. Return a `min(...)` of soft-ramped sub-conditions.
+- **New static gesture:** add a `score_<name>()` method to `GestureClassifier`, register it
+  in `scores()`. Return a `min(...)` of soft-ramped sub-conditions.
+- **New dynamic (motion) gesture:** add a `_check_<name>(hist, now, label)` method to
+  `DynamicGestureRecognizer` following the pattern in `_check_swipe`/`_check_wave`/
+  `_check_circle` (read `hist.positions`, return a `DynamicGestureEvent` or `None`, call
+  `self._fire(hist, now, "<name>")` on match), then add it to the check tuple in `update()`.
 - **New two-hand combo:** write a `rule_<name>(ctx)` function in
   `interaction_analyzer.py` returning an `InteractionEvent` or `None`, then append it
   to the `RULES` list. No loop changes needed.

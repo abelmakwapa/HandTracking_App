@@ -4,7 +4,8 @@ main.py
 
 Orchestrates the hand-tracking pipeline:
 
-    frame -> HandTracker -> [ GestureClassifier per hand ]
+    frame -> HandTracker -> [ GestureClassifier per hand ]     (static pose)
+                          -> [ DynamicGestureRecognizer per hand ] (motion)
                           -> InteractionAnalyzer (two hands)
                           -> overlay + display
 
@@ -17,6 +18,7 @@ import time
 
 import cv2
 
+from dynamic_gestures import DynamicGestureRecognizer
 from fps_counter import FPSCounter
 from gesture_classifier import GestureClassifier
 from geometry import THUMB_TIP, to_xy
@@ -34,10 +36,21 @@ GESTURE_LABELS = {
     "none": "-",
 }
 
+# Pretty labels for dynamic (motion) gestures, keyed by (name, detail).
+DYNAMIC_GESTURE_LABELS = {
+    ("swipe", "left"): "Swipe Left",
+    ("swipe", "right"): "Swipe Right",
+    ("swipe", "up"): "Swipe Up",
+    ("swipe", "down"): "Swipe Down",
+    ("circle", "clockwise"): "Circle (CW)",
+    ("circle", "counterclockwise"): "Circle (CCW)",
+}
+
 GREEN = (0, 255, 0)
 YELLOW = (0, 255, 255)
 RED = (0, 0, 255)
 WHITE = (255, 255, 255)
+ORANGE = (0, 140, 255)
 
 
 # ---------------------------------------------------------------------------
@@ -183,14 +196,28 @@ def draw_hand_overlay(frame, hand, gesture, finger_count, classifier, debug):
             )
 
 
-def draw_interactions(frame, events, debug):
-    h, w = frame.shape[:2]
-    y = h - 20 - (len(events) - 1) * 24 if events else h - 20
-    for ev in events:
-        label = f"[{ev.name}] {ev.detail}"
-        if debug:
-            label += f" ({ev.value:+.3f})"
-        _text(frame, label, (10, y), RED, 0.6, 2)
+def format_dynamic_event(ev, debug):
+    """Human-readable label for a fired DynamicGestureEvent."""
+    pretty = DYNAMIC_GESTURE_LABELS.get((ev.name, ev.detail))
+    if pretty is None:
+        pretty = "Wave" if ev.name == "wave" else f"{ev.name} {ev.detail}"
+    text = f"{ev.hand_label}: {pretty}"
+    if debug:
+        text += f" ({ev.confidence:.2f})"
+    return text
+
+
+def draw_event_stack(frame, items):
+    """Draw a bottom-anchored, upward-growing stack of (text, color) lines.
+
+    Used for both two-hand interaction events and per-hand dynamic gesture
+    events so they share one non-overlapping layout instead of two
+    independently positioned overlays.
+    """
+    h, _w = frame.shape[:2]
+    y = h - 20 - (len(items) - 1) * 24 if items else h - 20
+    for text, color in items:
+        _text(frame, text, (10, y), color, 0.6, 2)
         y += 24
 
 
@@ -213,6 +240,7 @@ def run(args) -> int:
     fps = FPSCounter(window=30)
     classifier = GestureClassifier()
     analyzer = InteractionAnalyzer()
+    dynamic_recognizer = DynamicGestureRecognizer()
 
     is_file = not args.source.isdigit()
     consecutive_drops = 0
@@ -255,6 +283,8 @@ def run(args) -> int:
                 print(f"[warn] Detection failed on a frame, skipping: {exc}")
                 continue
 
+            dynamic_recognizer.prune_absent({h.label for h in hands})
+            dynamic_events = []
             for hand in hands:
                 tracker.draw(frame, hand)
                 gesture = classifier.classify(
@@ -263,8 +293,19 @@ def run(args) -> int:
                 fingers = classifier.count_fingers(hand.landmarks)
                 draw_hand_overlay(frame, hand, gesture, fingers, classifier, args.debug)
 
+                dyn_event = dynamic_recognizer.update(hand.label, hand.palm_center)
+                if dyn_event is not None:
+                    dynamic_events.append(dyn_event)
+
             events = analyzer.analyze(hands)
-            draw_interactions(frame, events, args.debug)
+
+            overlay_items = [(format_dynamic_event(ev, args.debug), ORANGE) for ev in dynamic_events]
+            for ev in events:
+                text = f"[{ev.name}] {ev.detail}"
+                if args.debug:
+                    text += f" ({ev.value:+.3f})"
+                overlay_items.append((text, RED))
+            draw_event_stack(frame, overlay_items)
 
             fps.tick()
             _text(frame, f"FPS: {fps.fps:4.1f}", (10, 30), GREEN, 0.7, 2)
