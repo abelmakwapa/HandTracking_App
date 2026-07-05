@@ -178,6 +178,8 @@ Since webcam input can't be unit-tested easily, verify each feature by hand. Run
 - [ ] Closed fist → `Fist`
 - [ ] V / peace sign, fingers apart → `Peace`
 - [ ] Thumb+index circle, other fingers up → `OK Sign`
+- [ ] Index finger extended alone (others curled) → `Pointing`
+- [ ] Thumb + pinky extended, other three curled ("shaka"/phone gesture) → `Call Me`
 
 **Dynamic (motion) gestures** (single hand; watch the orange line above the interaction row)
 - [ ] Swipe your hand quickly left-to-right across the frame → `[swipe] right` (or `Left: Swipe Right` in the overlay).
@@ -205,6 +207,8 @@ Since webcam input can't be unit-tested easily, verify each feature by hand. Run
 | **Fist vs. thumbs up/down** | All three share four curled fingers; only the thumb differs. A thumb that's tucked but slightly angled can read as up/down. | For a clean fist, tuck the thumb across the fingers; for thumbs up/down, extend the thumb fully and clear of the palm. |
 | **Thumbs up vs. thumbs down** | Distinguished purely by thumb-tip vertical position vs. wrist. Near-horizontal thumbs are ambiguous. | Point the thumb clearly up or down, not sideways. |
 | **Fist vs. OK (edge case)** | A loose fist where thumb rests near the index tip can start scoring OK. | Watch the `ok` score in `--debug`; raise `OK_TOUCH_DIST` down if false OKs appear. |
+| **Pointing vs. finger-count "1"** | Both involve just the index finger extended — `Pointing` is a gesture *label*, while `count_fingers` reports it as `1` regardless of gesture name. Not a real conflict, but easy to expect them to disagree. | These are two separate features reading the same pose; seeing `Fingers: 1` and `Pointing` together is correct, not redundant. |
+| **Call Me vs. thumbs up/down** | Both extend the thumb while curling other fingers; they differ only in whether the pinky is also extended. If the pinky doesn't curl/extend cleanly, the two can flicker between each other. | Curl the pinky firmly down for thumbs up/down; extend it clearly out to the side for Call Me. |
 | **Swipe vs. wave** | A fast single back-and-forth can look like the start of a swipe in one direction, then reverse. Since a swipe fires (and clears history) on the first qualifying displacement, a wave that starts fast may fire as a swipe instead. | Start a wave with smaller, more controlled oscillations; reserve full-arm motion for swipes. |
 | **Circle vs. wave** | A wide, curved wave can accumulate enough swept angle to look "circle-ish" before completing a straight reversal. | Keep circles round and at a consistent radius from a fixed center; keep waves flat (mostly x-motion, `WAVE_MAX_Y_DRIFT` guards this). |
 | **Active-hand vs. swipe on the *other* hand** | If one hand swipes, `rule_active_hand` (in `interaction_analyzer.py`) will also likely name it "active" that frame — both are correct simultaneously, not a bug, but can look redundant on screen. | Expected overlap; the two systems answer different questions (which hand moved vs. what shape did the motion trace). |

@@ -33,6 +33,8 @@ GESTURE_LABELS = {
     "fist": "Fist",
     "peace": "Peace",
     "ok": "OK Sign",
+    "pointing": "Pointing",
+    "call_me": "Call Me",
     "none": "-",
 }
 

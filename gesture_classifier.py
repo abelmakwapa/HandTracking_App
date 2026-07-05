@@ -73,6 +73,8 @@ class GestureClassifier:
         "fist",
         "peace",
         "ok",
+        "pointing",
+        "call_me",
     )
 
     # -- finger-state primitives -------------------------------------------
@@ -183,7 +185,27 @@ class GestureClassifier:
         others_up = min(f["middle"], f["ring"], f["pinky"])
         return min(touching, others_up)
 
+    def score_pointing(self, landmarks) -> float:
+        """Index finger extended alone; middle/ring/pinky curled.
+
+        Thumb position is deliberately excluded from the score (it's free to
+        rest anywhere) so a relaxed "gun"-style point and a tucked-thumb point
+        both register the same.
+        """
+        f = self._finger_scores(landmarks)
+        curled_others = min(1.0 - f["middle"], 1.0 - f["ring"], 1.0 - f["pinky"])
+        return min(f["index"], curled_others)
+
+    def score_call_me(self, landmarks) -> float:
+        """"Call me" / shaka: thumb + pinky extended, index/middle/ring curled."""
+        f = self._finger_scores(landmarks)
+        curled_middle = min(1.0 - f["index"], 1.0 - f["middle"], 1.0 - f["ring"])
+        return min(self.thumb_extension(landmarks), f["pinky"], curled_middle)
+
     # -- dispatch -----------------------------------------------------------
+    # Note: "rock / paper / scissors" aren't separate methods — they're the
+    # same hand shapes as fist / open_palm / peace respectively, so those
+    # gestures already cover that set under their more general names.
     def scores(self, landmarks) -> Dict[str, float]:
         """Return every gesture's confidence for this hand."""
         return {
@@ -193,6 +215,8 @@ class GestureClassifier:
             "fist": self.score_fist(landmarks),
             "peace": self.score_peace(landmarks),
             "ok": self.score_ok(landmarks),
+            "pointing": self.score_pointing(landmarks),
+            "call_me": self.score_call_me(landmarks),
         }
 
     def classify(self, landmarks, min_confidence: float = 0.6) -> Gesture:
