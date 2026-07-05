@@ -6,3 +6,8 @@
 # instead, which requires downloading a model file — see README "Install".
 opencv-python>=4.8,<5.0
 mediapipe>=0.10.30
+
+# Optional: only needed for --cursor-control (drives the real OS mouse).
+# On macOS this also requires granting your terminal app Accessibility
+# permission — see README "Install".
+pyautogui>=0.9.54,<1.0

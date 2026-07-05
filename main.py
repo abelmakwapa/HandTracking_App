@@ -6,6 +6,7 @@ Orchestrates the hand-tracking pipeline:
 
     frame -> HandTracker -> [ GestureClassifier per hand ]     (static pose)
                           -> [ DynamicGestureRecognizer per hand ] (motion)
+                          -> [ CursorController for one hand ]     (optional, OS cursor)
                           -> InteractionAnalyzer (two hands)
                           -> overlay + display
 
@@ -18,6 +19,7 @@ import time
 
 import cv2
 
+from cursor_controller import CursorController
 from dynamic_gestures import DynamicGestureRecognizer
 from fps_counter import FPSCounter
 from gesture_classifier import GestureClassifier
@@ -107,6 +109,26 @@ def parse_args(argv=None) -> argparse.Namespace:
         "--debug",
         action="store_true",
         help="Overlay raw landmark coords and gesture metrics (angles/distances).",
+    )
+    p.add_argument(
+        "--cursor-control",
+        action="store_true",
+        help=(
+            "Drive the real OS cursor from an index fingertip (pinch to click). "
+            "Off by default since it takes over your mouse. Toggle with 'c' at runtime."
+        ),
+    )
+    p.add_argument(
+        "--cursor-hand",
+        choices=("Left", "Right"),
+        default="Right",
+        help="Which hand's index fingertip drives the cursor.",
+    )
+    p.add_argument(
+        "--cursor-smoothing",
+        type=float,
+        default=0.35,
+        help="EMA smoothing weight for cursor movement (lower = smoother, laggier).",
     )
     return p.parse_args(argv)
 
@@ -244,6 +266,17 @@ def run(args) -> int:
     analyzer = InteractionAnalyzer()
     dynamic_recognizer = DynamicGestureRecognizer()
 
+    cursor = None
+    if args.cursor_control:
+        try:
+            cursor = CursorController(smoothing=args.cursor_smoothing)
+        except RuntimeError as exc:
+            raise SystemExit(f"[error] {exc}")
+        print(
+            f"[info] Cursor control enabled, driven by the {args.cursor_hand} hand. "
+            "Press 'c' to pause/resume; pinch thumb+index to click."
+        )
+
     is_file = not args.source.isdigit()
     consecutive_drops = 0
     MAX_DROPS = 30  # tolerate transient webcam hiccups before giving up
@@ -301,6 +334,12 @@ def run(args) -> int:
 
             events = analyzer.analyze(hands)
 
+            clicked = False
+            if cursor is not None:
+                target_hand = next((h for h in hands if h.label == args.cursor_hand), None)
+                if target_hand is not None:
+                    clicked = cursor.update(target_hand.landmarks)
+
             overlay_items = [(format_dynamic_event(ev, args.debug), ORANGE) for ev in dynamic_events]
             for ev in events:
                 text = f"[{ev.name}] {ev.detail}"
@@ -313,10 +352,21 @@ def run(args) -> int:
             _text(frame, f"FPS: {fps.fps:4.1f}", (10, 30), GREEN, 0.7, 2)
             _text(frame, f"Hands: {len(hands)}", (10, 55), GREEN, 0.6, 2)
 
+            if cursor is not None:
+                w = frame.shape[1]
+                status = "ON" if cursor.enabled else "OFF (paused)"
+                _text(frame, f"Cursor: {status} ({args.cursor_hand})", (w - 340, 30), ORANGE, 0.6, 2)
+                if clicked:
+                    _text(frame, "Click!", (w - 340, 55), ORANGE, 0.6, 2)
+
             display = cv2.resize(frame, (args.width, args.height))
             cv2.imshow("Hand Tracking", display)
-            if cv2.waitKey(1) & 0xFF == ord("q"):
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord("q"):
                 break
+            if key == ord("c") and cursor is not None:
+                state = cursor.toggle()
+                print(f"[info] Cursor control {'enabled' if state else 'disabled'}.")
 
     cap.release()
     cv2.destroyAllWindows()

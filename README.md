@@ -1,9 +1,9 @@
 # Real-Time Hand Tracking App
 
 Modular hand tracking with **finger counting**, **static gesture recognition**,
-**dynamic (motion) gesture recognition**, and **two-hand interaction detection**,
-built on OpenCV + MediaPipe. Designed as a foundation for gesture-controlled
-interfaces, not a one-off demo.
+**dynamic (motion) gesture recognition**, **two-hand interaction detection**, and
+optional **OS cursor control**, built on OpenCV + MediaPipe. Designed as a
+foundation for gesture-controlled interfaces, not a one-off demo.
 
 ## File layout
 
@@ -15,6 +15,7 @@ interfaces, not a one-off demo.
 | `gesture_classifier.py` | `GestureClassifier` — one scored method per **static** (single-frame) gesture. |
 | `dynamic_gestures.py` | `DynamicGestureRecognizer` — one scored method per **motion** gesture (swipe, wave, circle), driven by per-hand trajectory history. |
 | `interaction_analyzer.py` | `InteractionAnalyzer` — pluggable two-hand rules (touch, pinch/zoom, active hand). |
+| `cursor_controller.py` | `CursorController` — optional, maps an index fingertip to the real OS mouse (smoothed) with pinch-to-click. |
 | `main.py` | CLI + orchestration + on-screen overlay. |
 
 ---
@@ -50,10 +51,15 @@ exits with this same download command rather than crashing.
   *terminal app* camera access under *System Settings → Privacy & Security →
   Camera*, then **restart the terminal** (not just the script) for it to take
   effect. Apple-silicon Macs work on native `python.org`/Homebrew Python 3.11.
+  For **`--cursor-control`**, macOS additionally requires granting the terminal
+  app **Accessibility** permission under *System Settings → Privacy & Security →
+  Accessibility* — without it, `pyautogui` silently fails to move the mouse.
 - **Windows**: `pip install opencv-python mediapipe` works out of the box. If the
   webcam is slow to open, it's usually the DirectShow backend warming up.
 - **Linux**: you may need `sudo apt install libgl1` for OpenCV's GUI and ensure your
-  user is in the `video` group for `/dev/video0` access.
+  user is in the `video` group for `/dev/video0` access. For `--cursor-control`,
+  `pyautogui` needs `python3-tk` and `python3-dev` (`sudo apt install python3-tk
+  python3-dev`) and an X11 session (Wayland support is limited).
 
 ---
 
@@ -83,6 +89,15 @@ python main.py --debug
 ```bash
 python main.py --det-conf 0.7 --track-conf 0.5 --gesture-conf 0.65 --complexity 0
 ```
+
+**Cursor control (opt-in — takes over your real OS mouse):**
+```bash
+python main.py --cursor-control
+python main.py --cursor-control --cursor-hand Left --cursor-smoothing 0.25
+```
+Move your index fingertip to move the cursor; pinch thumb+index to click. Press
+**`c`** at runtime to pause/resume without quitting. See the macOS/Linux
+permission notes above — without them the cursor silently won't move.
 
 Press **`q`** in the window to quit. Full flag list: `python main.py --help`.
 
@@ -144,6 +159,15 @@ gesture name.
 | `PINCH_DELTA` (0.015) | per-window change in inter-hand distance to fire zoom-in/out |
 | `InteractionAnalyzer(history=8)` | frames of history; larger = smoother zoom, more lag |
 
+**Cursor-control thresholds** — in `cursor_controller.py`:
+
+| Constant / arg | Meaning |
+|-----------------|---------|
+| `--cursor-smoothing` (0.35) | EMA weight for the new raw position each frame; lower = smoother but laggier |
+| `active_region` (0.15,0.15,0.85,0.85) | sub-rectangle of the camera frame mapped to the full screen — shrink it further if you don't want to reach the edges of the webcam's field of view to hit screen corners |
+| `CLICK_DISTANCE` (0.4 palm-lengths) | thumb-index gap that counts as a pinch/click |
+| `CLICK_COOLDOWN` (0.6s) | minimum time between accepted clicks, so holding a pinch doesn't spam-click |
+
 **How to tune:** run with `--debug`, watch the live `angle`/`distance`/`score`
 numbers while you perform a gesture, and nudge the constant that's on the wrong side
 of your reading. E.g. if "open palm" won't register with fully-spread fingers, your
@@ -193,6 +217,15 @@ Since webcam input can't be unit-tested easily, verify each feature by hand. Run
 - [ ] Hold both hands up, move them apart → `[pinch_zoom] zoom_in`; together → `zoom_out`.
 - [ ] Wiggle one hand while holding the other still → `[active_hand]` names the moving one.
 
+**Cursor control** (`python main.py --cursor-control`)
+- [ ] Top-right overlay shows `Cursor: ON (Right)`.
+- [ ] Moving your right index fingertip moves the real OS mouse cursor smoothly (not jumpy).
+- [ ] Pinch thumb+index together → a click registers on whatever's under the cursor; overlay flashes `Click!`.
+- [ ] Holding the pinch does **not** repeat-click faster than roughly once per 0.6s (cooldown).
+- [ ] Press `c` → overlay switches to `Cursor: OFF (paused)` and moving your hand no longer moves the mouse; press `c` again to resume.
+- [ ] Slam your *physical* mouse into a screen corner while cursor control is on → control pauses itself with a console message (fail-safe).
+- [ ] `--cursor-control` without `pyautogui` installed → clear "pyautogui is not installed" error, no crash/traceback.
+
 **Error handling**
 - [ ] `--source does_not_exist.mp4` → clear "Video file not found" message, no crash.
 - [ ] `--source 9` (no such camera) → clear "Could not open webcam" message with fixes.
@@ -209,6 +242,7 @@ Since webcam input can't be unit-tested easily, verify each feature by hand. Run
 | **Fist vs. OK (edge case)** | A loose fist where thumb rests near the index tip can start scoring OK. | Watch the `ok` score in `--debug`; raise `OK_TOUCH_DIST` down if false OKs appear. |
 | **Pointing vs. finger-count "1"** | Both involve just the index finger extended — `Pointing` is a gesture *label*, while `count_fingers` reports it as `1` regardless of gesture name. Not a real conflict, but easy to expect them to disagree. | These are two separate features reading the same pose; seeing `Fingers: 1` and `Pointing` together is correct, not redundant. |
 | **Call Me vs. thumbs up/down** | Both extend the thumb while curling other fingers; they differ only in whether the pinky is also extended. If the pinky doesn't curl/extend cleanly, the two can flicker between each other. | Curl the pinky firmly down for thumbs up/down; extend it clearly out to the side for Call Me. |
+| **Pinch-to-click vs. OK sign vs. two-hand pinch/zoom** | All three key off thumb-index tip proximity, just on different hands/scopes: `cursor_controller`'s click uses *one* hand's thumb-index gap; `GestureClassifier.score_ok` uses the same gap *plus* requires the other three fingers up; `InteractionAnalyzer`'s pinch/zoom uses the distance *between two separate hands*, not within one hand. | If cursor control is on and you also want to show an OK sign, expect an accidental click each time your thumb and index meet — that's the same signal doing two jobs on purpose. Turn off `--cursor-control` if you need OK-sign-heavy interaction without stray clicks. |
 | **Swipe vs. wave** | A fast single back-and-forth can look like the start of a swipe in one direction, then reverse. Since a swipe fires (and clears history) on the first qualifying displacement, a wave that starts fast may fire as a swipe instead. | Start a wave with smaller, more controlled oscillations; reserve full-arm motion for swipes. |
 | **Circle vs. wave** | A wide, curved wave can accumulate enough swept angle to look "circle-ish" before completing a straight reversal. | Keep circles round and at a consistent radius from a fixed center; keep waves flat (mostly x-motion, `WAVE_MAX_Y_DRIFT` guards this). |
 | **Active-hand vs. swipe on the *other* hand** | If one hand swipes, `rule_active_hand` (in `interaction_analyzer.py`) will also likely name it "active" that frame — both are correct simultaneously, not a bug, but can look redundant on screen. | Expected overlap; the two systems answer different questions (which hand moved vs. what shape did the motion trace). |
@@ -226,3 +260,7 @@ Since webcam input can't be unit-tested easily, verify each feature by hand. Run
 - **New two-hand combo:** write a `rule_<name>(ctx)` function in
   `interaction_analyzer.py` returning an `InteractionEvent` or `None`, then append it
   to the `RULES` list. No loop changes needed.
+- **New cursor action:** `CursorController.update()` currently only moves + clicks;
+  a right-click or scroll could be added the same way `_maybe_click` works — read a
+  geometric signal (e.g. a fist while moving = drag) and call the matching `pyautogui`
+  function, gated by its own cooldown.
