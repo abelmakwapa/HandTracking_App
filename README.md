@@ -1,0 +1,176 @@
+# Real-Time Hand Tracking App
+
+Modular hand tracking with **finger counting**, **static gesture recognition**, and
+**two-hand interaction detection**, built on OpenCV + MediaPipe. Designed as a
+foundation for gesture-controlled interfaces, not a one-off demo.
+
+## File layout
+
+| File | Responsibility |
+|------|----------------|
+| `geometry.py` | Pure vector/landmark math (distances, joint angles, palm center). No CV deps. |
+| `fps_counter.py` | Rolling-average FPS meter. |
+| `hand_tracker.py` | `HandTracker` — MediaPipe wrapper; returns clean `HandResult`s with handedness. |
+| `gesture_classifier.py` | `GestureClassifier` — one scored method per gesture. |
+| `interaction_analyzer.py` | `InteractionAnalyzer` — pluggable two-hand rules (touch, pinch/zoom, active hand). |
+| `main.py` | CLI + orchestration + on-screen overlay. |
+
+---
+
+## (a) Install
+
+MediaPipe currently supports **Python 3.9–3.11** (avoid 3.12+ for now).
+
+```bash
+cd HandTracking_App
+python3 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+**OS-specific notes**
+
+- **macOS**: the first webcam run triggers a camera-permission prompt. If you launch
+  from a terminal, grant the *terminal app* camera access under
+  *System Settings → Privacy & Security → Camera*, then restart the terminal.
+  Apple-silicon Macs work on native `python.org`/Homebrew Python 3.11.
+- **Windows**: `pip install opencv-python mediapipe` works out of the box. If the
+  webcam is slow to open, it's usually the DirectShow backend warming up.
+- **Linux**: you may need `sudo apt install libgl1` for OpenCV's GUI and ensure your
+  user is in the `video` group for `/dev/video0` access.
+
+---
+
+## (b) Run
+
+**Webcam (default, index 0):**
+```bash
+python main.py
+```
+
+**Different webcam / window size:**
+```bash
+python main.py --source 1 --width 1280 --height 720
+```
+
+**Video file:**
+```bash
+python main.py --source /path/to/video.mov
+```
+
+**Debug overlay (raw coords + all gesture scores + interaction deltas):**
+```bash
+python main.py --debug
+```
+
+**Tune detection / performance:**
+```bash
+python main.py --det-conf 0.7 --track-conf 0.5 --gesture-conf 0.65 --complexity 0
+```
+
+Press **`q`** in the window to quit. Full flag list: `python main.py --help`.
+
+> **Performance:** `--complexity 0` (the default, "lite" model) is what gets you
+> 15+ FPS on a laptop CPU. Use `--complexity 1` only if you have GPU/CPU headroom
+> and want slightly steadier landmarks.
+
+> **Handedness note:** the webcam feed is mirrored (`cv2.flip`) so it feels natural.
+> MediaPipe labels handedness from the *image's* perspective, which after mirroring
+> matches your real left/right hand. On a raw (unmirrored) video file the labels are
+> flipped — that's expected.
+
+---
+
+## (c) Thresholds & tuning
+
+All gesture geometry is **scale-normalized** by palm length (`hand_scale`), so
+thresholds hold whether your hand is near or far from the camera. Scores are built
+from *soft ramps* (`_ramp`) rather than hard cutoffs, so a gesture that's *almost*
+right scores ~0.9 instead of flipping on/off.
+
+**Gesture thresholds** — in `gesture_classifier.py`:
+
+| Constant | Meaning | Raise it to… | Lower it to… |
+|----------|---------|--------------|--------------|
+| `EXTENDED_ANGLE` (160°) | PIP joint angle above which a finger is "straight" | demand straighter fingers | count slightly-bent fingers as extended |
+| `CURLED_ANGLE` (100°) | angle below which a finger is "curled" | — | — |
+| `THUMB_EXT_ANGLE` (150°) | IP angle for the thumb being straight | require a straighter thumb | — |
+| `OK_TOUCH_DIST` (0.35 palm-lengths) | max thumb–index tip gap to register an OK "ring" | require tips closer together | tolerate a looser ring |
+
+Finger counting uses a **0.5 decision point** on the per-finger extension score
+(`count_fingers`). Each gesture combines sub-scores with `min(...)` = "all
+conditions must hold"; the weakest condition sets the confidence.
+
+**Interaction thresholds** — in `interaction_analyzer.py`:
+
+| Constant | Meaning |
+|----------|---------|
+| `TOUCH_DISTANCE` (0.12) | normalized-frame distance between palm centers to call it a touch/clap |
+| `PINCH_DELTA` (0.015) | per-window change in inter-hand distance to fire zoom-in/out |
+| `InteractionAnalyzer(history=8)` | frames of history; larger = smoother zoom, more lag |
+
+**How to tune:** run with `--debug`, watch the live `angle`/`distance`/`score`
+numbers while you perform a gesture, and nudge the constant that's on the wrong side
+of your reading. E.g. if "open palm" won't register with fully-spread fingers, your
+PIP angles are reading ~150° → lower `EXTENDED_ANGLE` to 150.
+
+---
+
+## (d) Manual validation checklist
+
+Since webcam input can't be unit-tested easily, verify each feature by hand. Run
+`python main.py --debug` and check the overlay.
+
+**Core tracking**
+- [ ] Landmarks (skeleton) track your hand smoothly as you move it.
+- [ ] Top-left **FPS** reads ≥15 and is stable (not wildly jumping per frame).
+- [ ] **Hands: N** matches how many hands are visible.
+
+**Handedness**
+- [ ] Right hand shows `Right (0.9x)`, left shows `Left (0.9x)`, with a plausible score.
+
+**Finger counting** (hold each pose, read `Fingers: N`)
+- [ ] Fist → **0**
+- [ ] Index only → **1**
+- [ ] Peace (index+middle) → **2**
+- [ ] Three fingers → **3**
+- [ ] Open palm → **5**
+
+**Gestures** (read the label + score, expect ≥0.6)
+- [ ] Thumbs up → `Thumbs Up`
+- [ ] Thumbs down → `Thumbs Down`
+- [ ] Open palm, fingers spread → `Open Palm`
+- [ ] Closed fist → `Fist`
+- [ ] V / peace sign, fingers apart → `Peace`
+- [ ] Thumb+index circle, other fingers up → `OK Sign`
+
+**Two-hand interactions** (need both hands in frame)
+- [ ] Bring palms together / clap → `[touch]` appears at the bottom.
+- [ ] Hold both hands up, move them apart → `[pinch_zoom] zoom_in`; together → `zoom_out`.
+- [ ] Wiggle one hand while holding the other still → `[active_hand]` names the moving one.
+
+**Error handling**
+- [ ] `--source does_not_exist.mp4` → clear "Video file not found" message, no crash.
+- [ ] `--source 9` (no such camera) → clear "Could not open webcam" message with fixes.
+- [ ] Unplug/cover the webcam mid-run → tolerates drops, exits cleanly after a burst.
+
+### Gesture pairs most likely to be confused — watch these
+
+| Pair | Why they collide | What to watch / how to disambiguate |
+|------|------------------|-------------------------------------|
+| **OK sign vs. pinch-start** | Both are thumb+index tips together. Static OK requires the *other three fingers extended*; a pinch usually curls them. If your middle/ring/pinky drift down, OK score drops. | Keep the last three fingers clearly up for OK. |
+| **Peace vs. open palm** | If ring/pinky don't curl enough, peace bleeds into a partial open palm. | Curl ring+pinky firmly; the `spread` term needs a real V-gap between index/middle. |
+| **Fist vs. thumbs up/down** | All three share four curled fingers; only the thumb differs. A thumb that's tucked but slightly angled can read as up/down. | For a clean fist, tuck the thumb across the fingers; for thumbs up/down, extend the thumb fully and clear of the palm. |
+| **Thumbs up vs. thumbs down** | Distinguished purely by thumb-tip vertical position vs. wrist. Near-horizontal thumbs are ambiguous. | Point the thumb clearly up or down, not sideways. |
+| **Fist vs. OK (edge case)** | A loose fist where thumb rests near the index tip can start scoring OK. | Watch the `ok` score in `--debug`; raise `OK_TOUCH_DIST` down if false OKs appear. |
+
+---
+
+## Extending it
+
+- **New gesture:** add a `score_<name>()` method to `GestureClassifier`, register it in
+  `scores()`. Return a `min(...)` of soft-ramped sub-conditions.
+- **New two-hand combo:** write a `rule_<name>(ctx)` function in
+  `interaction_analyzer.py` returning an `InteractionEvent` or `None`, then append it
+  to the `RULES` list. No loop changes needed.

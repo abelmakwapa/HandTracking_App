@@ -1,0 +1,8 @@
+# Core dependencies. MediaPipe pins a compatible NumPy/Protobuf range itself.
+#
+# NOTE: mediapipe 0.10.30+ dropped the legacy `mp.solutions` API from its
+# PyPI wheels entirely (Hands, drawing_utils, etc. are gone). This app uses
+# the newer Tasks API (`mediapipe.tasks.python.vision.HandLandmarker`)
+# instead, which requires downloading a model file — see README "Install".
+opencv-python>=4.8,<5.0
+mediapipe>=0.10.30
