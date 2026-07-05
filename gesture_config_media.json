@@ -1,0 +1,12 @@
+{
+  "stabilizer": { "enter": 0.75, "exit": 0.55, "hold_frames": 4 },
+
+  "bindings": [
+    { "on": "gesture:ok",           "action": { "type": "key", "keys": ["space"] }, "cooldown": 0.8 },
+    { "on": "dynamic:swipe:right",  "action": { "type": "key", "keys": ["shift", "n"] }, "cooldown": 0.6 },
+    { "on": "dynamic:swipe:left",   "action": { "type": "key", "keys": ["shift", "p"] }, "cooldown": 0.6 },
+    { "on": "dynamic:swipe:up",     "action": { "type": "key", "keys": ["up"] },   "cooldown": 0.4 },
+    { "on": "dynamic:swipe:down",   "action": { "type": "key", "keys": ["down"] }, "cooldown": 0.4 },
+    { "on": "gesture:fist",         "action": { "type": "key", "keys": ["m"] },    "cooldown": 1.0 }
+  ]
+}

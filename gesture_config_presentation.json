@@ -1,0 +1,10 @@
+{
+  "stabilizer": { "enter": 0.75, "exit": 0.55, "hold_frames": 5 },
+
+  "bindings": [
+    { "on": "gesture:peace",      "action": { "type": "key", "keys": ["right"] }, "cooldown": 0.8 },
+    { "on": "gesture:fist",       "action": { "type": "key", "keys": ["left"] },  "cooldown": 0.8 },
+    { "on": "gesture:thumbs_up",  "action": { "type": "key", "keys": ["f5"] },    "cooldown": 1.5 },
+    { "on": "gesture:open_palm",  "action": { "type": "key", "keys": ["b"] },     "cooldown": 1.0 }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "_comment": "Discrete/turn-based game control. Swipes and static gestures fire ONE keypress per motion/hold — good for turn-based or platformer 'step' input, NOT for continuously-held movement (holding your hand up doesn't hold the key down). For continuous movement, poll pipeline.stabilizer.active_gesture('Right') directly in your own game loop instead of key events — see README 'Game control' recipe.",
+
+  "stabilizer": { "enter": 0.75, "exit": 0.55, "hold_frames": 3 },
+
+  "bindings": [
+    { "on": "dynamic:swipe:up",     "action": { "type": "key", "keys": ["up"] },    "cooldown": 0.3 },
+    { "on": "dynamic:swipe:down",   "action": { "type": "key", "keys": ["down"] },  "cooldown": 0.3 },
+    { "on": "dynamic:swipe:left",   "action": { "type": "key", "keys": ["left"] },  "cooldown": 0.3 },
+    { "on": "dynamic:swipe:right",  "action": { "type": "key", "keys": ["right"] }, "cooldown": 0.3 },
+    { "on": "gesture:fist",         "action": { "type": "key", "keys": ["space"] }, "cooldown": 0.4 },
+    { "on": "gesture:ok",           "action": { "type": "key", "keys": ["z"] },     "cooldown": 0.4 }
+  ]
+}

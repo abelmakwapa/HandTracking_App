@@ -1,0 +1,17 @@
+{
+  "stabilizer": { "enter": 0.7, "exit": 0.5, "hold_frames": 6 },
+
+  "bindings": [
+    { "on": "gesture:thumbs_up",    "action": { "type": "key", "keys": ["up"] },     "cooldown": 0.6 },
+    { "on": "gesture:thumbs_down",  "action": { "type": "key", "keys": ["down"] },   "cooldown": 0.6 },
+    { "on": "gesture:open_palm",    "action": { "type": "key", "keys": ["enter"] },  "cooldown": 1.0 },
+    { "on": "gesture:fist",         "action": { "type": "key", "keys": ["escape"] }, "cooldown": 1.0 },
+    { "on": "dynamic:swipe:left",   "action": { "type": "key", "keys": ["shift", "tab"] }, "cooldown": 0.6 },
+    { "on": "dynamic:swipe:right",  "action": { "type": "key", "keys": ["tab"] },    "cooldown": 0.6 }
+  ],
+
+  "buttons": [
+    { "name": "yes", "label": "YES",  "rect": [0.03, 0.35, 0.22, 0.50] },
+    { "name": "no",  "label": "NO",   "rect": [0.03, 0.55, 0.22, 0.70] }
+  ]
+}

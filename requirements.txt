@@ -7,7 +7,13 @@
 opencv-python>=4.8,<5.0
 mediapipe>=0.10.30
 
-# Optional: only needed for --cursor-control (drives the real OS mouse).
-# On macOS this also requires granting your terminal app Accessibility
-# permission — see README "Install".
+# Optional: only needed for --cursor-control (drives the real OS mouse) and
+# for "key"-type action bindings in the gesture config. On macOS this also
+# requires granting your terminal app Accessibility permission — see README.
 pyautogui>=0.9.54,<1.0
+
+# Optional: only needed for --ws-port (WebSocket event broadcasting).
+websockets>=12
+
+# Optional: only needed if you prefer a .yaml gesture config over .json.
+# pyyaml>=6

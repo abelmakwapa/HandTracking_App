@@ -1,0 +1,112 @@
+<!--
+browser_client.html
+====================
+
+Minimal example: a web page that receives live gesture/landmark events over
+WebSocket from `python main.py --ws-port 8765 --send-landmarks` and reacts to
+them — a starting point for a browser game, a web-based AR overlay, or any
+JS app that wants gesture input without running Python in the browser.
+
+Usage:
+    Terminal 1:  python main.py --ws-port 8765 --send-landmarks
+    Terminal 2:  open this file directly in a browser (file://) or serve it
+                 with `python -m http.server`.
+
+No build step, no dependencies — plain WebSocket + Canvas2D.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Hand-Tracking Browser Client</title>
+<style>
+  body { font-family: system-ui, sans-serif; background: #111; color: #eee; margin: 0; padding: 16px; }
+  #status { padding: 6px 10px; border-radius: 4px; display: inline-block; margin-bottom: 10px; }
+  #status.connected { background: #1a5c1a; }
+  #status.disconnected { background: #5c1a1a; }
+  #canvas { background: #000; border: 1px solid #333; display: block; margin-top: 10px; }
+  #log { font-family: monospace; font-size: 12px; max-height: 200px; overflow-y: auto;
+         background: #1a1a1a; padding: 8px; margin-top: 10px; white-space: pre-wrap; }
+  input { width: 220px; }
+</style>
+</head>
+<body>
+  <h2>Hand-Tracking Browser Client</h2>
+  <label>ws://<input id="addr" value="localhost:8765"></label>
+  <button id="connectBtn">Connect</button>
+  <span id="status" class="disconnected">disconnected</span>
+
+  <canvas id="canvas" width="640" height="480"></canvas>
+  <div id="log"></div>
+
+<script>
+const statusEl = document.getElementById('status');
+const logEl = document.getElementById('log');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let ws = null;
+
+function log(line) {
+  logEl.textContent = `${line}\n` + logEl.textContent.split('\n').slice(0, 40).join('\n');
+}
+
+function setStatus(connected) {
+  statusEl.textContent = connected ? 'connected' : 'disconnected';
+  statusEl.className = connected ? 'connected' : 'disconnected';
+}
+
+// Fingertip landmark indices, matching geometry.py's naming.
+const FINGERTIPS = { thumb: 4, index: 8, middle: 12, ring: 16, pinky: 20 };
+const COLORS = { Left: '#ffcc00', Right: '#00e0ff' };
+
+function drawHands(hands) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  for (const hand of hands || []) {
+    ctx.fillStyle = COLORS[hand.label] || '#ffffff';
+    ctx.font = '14px monospace';
+    ctx.fillText(hand.label, 8, hand.label === 'Right' ? 20 : 40);
+    for (const [x, y] of hand.lm) {
+      ctx.beginPath();
+      ctx.arc(x * canvas.width, y * canvas.height, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+function handleEvent(msg) {
+  switch (msg.topic) {
+    case 'landmarks':
+      drawHands(msg.hands);
+      break;
+    case 'gesture.start':
+      log(`[${msg.t.toFixed(2)}s] ${msg.hand}: ${msg.name} started (${msg.score})`);
+      break;
+    case 'gesture.end':
+      log(`[${msg.t.toFixed(2)}s] ${msg.hand}: ${msg.name} ended (${msg.duration.toFixed(2)}s held)`);
+      break;
+    case 'dynamic':
+      log(`[${msg.t.toFixed(2)}s] ${msg.hand}: ${msg.name} ${msg.detail}`);
+      break;
+    case 'interaction':
+      log(`[${msg.t.toFixed(2)}s] two-hand: ${msg.name} ${msg.detail}`);
+      break;
+    case 'button.press':
+      log(`[${msg.t.toFixed(2)}s] button: ${msg.name}`);
+      break;
+    default:
+      log(JSON.stringify(msg));
+  }
+}
+
+document.getElementById('connectBtn').addEventListener('click', () => {
+  if (ws) { ws.close(); ws = null; }
+  const addr = document.getElementById('addr').value.trim();
+  ws = new WebSocket(`ws://${addr}/`);
+  ws.onopen = () => { setStatus(true); log('connected to ' + addr); };
+  ws.onclose = () => setStatus(false);
+  ws.onerror = () => log('websocket error — is main.py running with --ws-port?');
+  ws.onmessage = (ev) => handleEvent(JSON.parse(ev.data));
+});
+</script>
+</body>
+</html>

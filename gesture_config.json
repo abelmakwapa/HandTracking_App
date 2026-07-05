@@ -1,0 +1,45 @@
+{
+  "stabilizer": {
+    "enter": 0.75,
+    "exit": 0.55,
+    "hold_frames": 4,
+    "per_gesture": {
+      "ok": { "enter": 0.8, "exit": 0.6 }
+    }
+  },
+
+  "bindings": [
+    {
+      "on": "gesture:thumbs_up",
+      "hand": "any",
+      "action": { "type": "key", "keys": ["space"] },
+      "cooldown": 1.0
+    },
+    {
+      "on": "dynamic:swipe:left",
+      "action": { "type": "key", "keys": ["right"] },
+      "cooldown": 0.8
+    },
+    {
+      "on": "dynamic:swipe:right",
+      "action": { "type": "key", "keys": ["left"] },
+      "cooldown": 0.8
+    },
+    {
+      "on": "gesture:peace",
+      "hand": "Right",
+      "action": { "type": "shell", "command": "echo \"peace at $(date +%T)\" >> /tmp/handtrack_actions.log" },
+      "cooldown": 2.0
+    },
+    {
+      "on": "button:hello",
+      "action": { "type": "shell", "command": "echo \"hello button pressed\" >> /tmp/handtrack_actions.log" },
+      "cooldown": 0.5
+    }
+  ],
+
+  "buttons": [
+    { "name": "hello", "label": "Say Hi", "rect": [0.04, 0.35, 0.26, 0.50] },
+    { "name": "next",  "label": "Next >", "rect": [0.04, 0.55, 0.26, 0.70] }
+  ]
+}

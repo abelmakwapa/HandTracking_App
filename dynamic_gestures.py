@@ -216,13 +216,21 @@ class DynamicGestureRecognizer:
         return DynamicGestureEvent("circle", direction, label, confidence)
 
     # -- driver ---------------------------------------------------------------
-    def update(self, label: str, palm_center: Point) -> Optional[DynamicGestureEvent]:
+    def update(
+        self, label: str, palm_center: Point, now: Optional[float] = None
+    ) -> Optional[DynamicGestureEvent]:
         """Feed one hand's current palm center; returns a fired event, if any.
 
         Checked in order swipe -> wave -> circle. A firing check clears the
         trajectory (see ``_fire``), so at most one gesture fires per motion.
+
+        Args:
+            now: pipeline timestamp in seconds. Pass the recorded timestamp
+                during session playback so detection is deterministic;
+                defaults to the wall clock for live use.
         """
-        now = time.perf_counter()
+        if now is None:
+            now = time.perf_counter()
         hist = self._hist(label)
         hist.positions.append((now, palm_center))
         self._prune_old(hist, now)
